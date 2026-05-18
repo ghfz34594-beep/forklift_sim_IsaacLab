@@ -210,6 +210,10 @@ class ForkliftPalletInsertLiftEnvCfg(DirectRLEnvCfg):
     preinsert_push_termination_m: float = 0.25
     preinsert_push_termination_min_steps: int = 8
     preinsert_push_termination_penalty_weight: float = 80.0
+    dirty_push_termination_enable: bool = False
+    dirty_push_termination_m: float = 0.08
+    dirty_push_termination_min_steps: int = 8
+    dirty_push_termination_penalty_weight: float = 120.0
     preinsert_contact_clean_gate_enable: bool = False
     preinsert_contact_dist_m: float = 0.08
     preinsert_contact_dist_ramp_m: float = 0.18
