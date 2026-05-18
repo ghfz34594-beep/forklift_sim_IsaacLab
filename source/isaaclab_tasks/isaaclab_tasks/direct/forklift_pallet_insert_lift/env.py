@@ -2213,6 +2213,8 @@ class ForkliftPalletInsertLiftEnv(DirectRLEnv):
         lifted_enough = lift_height >= self.cfg.lift_delta_m
         success_strict = success_geom_strict & lifted_enough
         time_out = self.episode_length_buf >= self.max_episode_length - 1
+        if self.cfg.align_before_contact_disable_insert_success:
+            success_geom_training = torch.zeros_like(success_geom_training)
 
         # ---- 实验 B: 论文原生 Reward 计算 ----
         
@@ -2226,7 +2228,23 @@ class ForkliftPalletInsertLiftEnv(DirectRLEnv):
         pallet_disp_xy = torch.norm(pallet_pos[:, :2] - pallet_init_pos_xy, dim=-1)
         push_free = pallet_disp_xy < self.cfg.push_free_disp_thresh_m
         inserted_push_free_reward = hold_state.hold_entry & push_free  # O2b: was (insert_depth >= self._insert_thresh)
+        if self.cfg.align_before_contact_disable_insert_bonus:
+            inserted_push_free_reward = torch.zeros_like(inserted_push_free_reward)
+        if self.cfg.clean_insert_unlock_enable:
+            clean_insert_unlocked = (
+                (center_y_err <= self.cfg.clean_insert_unlock_align_gate_m)
+                & (tip_y_err <= self.cfg.clean_insert_unlock_tip_gate_m)
+                & (yaw_err_deg <= self.cfg.clean_insert_unlock_yaw_gate_deg)
+                & (pallet_disp_xy <= self.cfg.clean_insert_unlock_push_gate_m)
+            )
+        else:
+            clean_insert_unlocked = torch.ones_like(push_free, dtype=torch.bool)
+        unlock_gate = clean_insert_unlocked.float()
         training_success_next = hold_state.hold_counter_next >= self._hold_steps
+        if self.cfg.align_before_contact_disable_insert_success:
+            training_success_next = torch.zeros_like(training_success_next)
+        if self.cfg.clean_insert_unlock_enable:
+            training_success_next = training_success_next & clean_insert_unlocked
         if self.cfg.push_free_training_success_enable:
             success_next = training_success_next & push_free
         else:
@@ -2343,6 +2361,40 @@ class ForkliftPalletInsertLiftEnv(DirectRLEnv):
             preinsert_reward_gate = torch.ones_like(insert_norm)
             r_preinsert_contact_drive = torch.zeros_like(insert_norm)
 
+        if self.cfg.align_before_contact_enable:
+            align_center_gate = torch.exp(
+                -(center_y_err / max(self.cfg.align_before_contact_center_sigma_m, 1e-6)) ** 2
+            )
+            align_yaw_gate = torch.exp(
+                -(yaw_err_deg / max(self.cfg.align_before_contact_yaw_sigma_deg, 1e-6)) ** 2
+            )
+            align_tip_gate = torch.where(
+                dist_front <= self.cfg.tip_align_near_dist,
+                torch.exp(
+                    -(tip_y_err / max(self.cfg.align_before_contact_tip_sigma_m, 1e-6)) ** 2
+                ),
+                torch.ones_like(tip_y_err),
+            )
+            align_contact_score = align_center_gate * align_yaw_gate * align_tip_gate
+            align_before_contact_reward = (
+                self.cfg.align_before_contact_reward_weight
+                * preinsert_contact_active
+                * push_free.float()
+                * align_contact_score
+            )
+            align_before_contact_hold_reward = (
+                self.cfg.align_before_contact_hold_weight
+                * preinsert_contact_active
+                * push_free.float()
+                * (center_y_err <= self.cfg.clean_insert_center_sigma_m).float()
+                * (tip_y_err <= self.cfg.tip_align_entry_m).float()
+                * (yaw_err_deg <= self.cfg.clean_insert_yaw_sigma_deg).float()
+            )
+        else:
+            align_contact_score = torch.zeros_like(insert_norm)
+            align_before_contact_reward = torch.zeros_like(insert_norm)
+            align_before_contact_hold_reward = torch.zeros_like(insert_norm)
+
         r_d = r_d_raw * clean_insert_gate
         r_cd = r_cd_raw * clean_insert_gate if self.cfg.clean_insert_gate_r_cd else r_cd_raw
         r_cpsi = (
@@ -2356,6 +2408,11 @@ class ForkliftPalletInsertLiftEnv(DirectRLEnv):
             r_cd = r_cd * preinsert_reward_gate
         if self.cfg.preinsert_contact_gate_r_cpsi:
             r_cpsi = r_cpsi * preinsert_reward_gate
+        if self.cfg.clean_insert_unlock_enable:
+            insert_reward_gate = 1.0 - clean_insert_progress + clean_insert_progress * unlock_gate
+            r_d = r_d * insert_reward_gate
+            r_cd = r_cd * insert_reward_gate
+            r_cpsi = r_cpsi * insert_reward_gate
 
         if self.cfg.clean_insert_dirty_penalty_enable:
             r_dirty_insert = -self.cfg.clean_insert_dirty_penalty_weight * clean_insert_progress * (
@@ -2377,6 +2434,7 @@ class ForkliftPalletInsertLiftEnv(DirectRLEnv):
             r_clean_insert_bonus = (
                 self.cfg.clean_insert_push_free_bonus_weight
                 * inserted_push_free_reward.float()
+                * unlock_gate
             )
         else:
             r_clean_insert_bonus = torch.zeros_like(clean_insert_progress)
@@ -2558,6 +2616,8 @@ class ForkliftPalletInsertLiftEnv(DirectRLEnv):
             r_hold_counter_progress +
             r_clean_insert_bonus +
             r_preinsert_align +
+            align_before_contact_reward +
+            align_before_contact_hold_reward +
             r_postinsert_align
         )
         
@@ -2728,6 +2788,10 @@ class ForkliftPalletInsertLiftEnv(DirectRLEnv):
         self.extras["log"]["paper_reward/r_preinsert_push"] = r_preinsert_push.mean()
         self.extras["log"]["paper_reward/r_preinsert_push_termination"] = r_preinsert_push_termination.mean()
         self.extras["log"]["paper_reward/r_preinsert_contact_drive"] = r_preinsert_contact_drive.mean()
+        self.extras["log"]["paper_reward/r_align_before_contact"] = align_before_contact_reward.mean()
+        self.extras["log"]["paper_reward/r_align_before_contact_hold"] = (
+            align_before_contact_hold_reward.mean()
+        )
         self.extras["log"]["paper_reward/r_postinsert_align"] = r_postinsert_align.mean()
         self.extras["log"]["paper_reward/rg"] = rg.mean()
         self.extras["log"]["paper_reward/r_success"] = r_success.mean()
@@ -2783,6 +2847,8 @@ class ForkliftPalletInsertLiftEnv(DirectRLEnv):
         self.extras["log"]["diag/preinsert_active_frac"] = preinsert_active.mean()
         self.extras["log"]["diag/preinsert_contact_active_frac"] = preinsert_contact_active.mean()
         self.extras["log"]["diag/preinsert_contact_clean_gate_mean"] = preinsert_contact_clean_gate.mean()
+        self.extras["log"]["diag/align_before_contact_score_mean"] = align_contact_score.mean()
+        self.extras["log"]["diag/clean_insert_unlocked_frac"] = clean_insert_unlocked.float().mean()
         self.extras["log"]["diag/preinsert_push_termination_frac"] = preinsert_push_termination.float().mean()
         self.extras["log"]["diag/preinsert_y_delta_mean"] = y_delta.mean()
         self.extras["log"]["diag/preinsert_yaw_delta_mean"] = yaw_delta.mean()
