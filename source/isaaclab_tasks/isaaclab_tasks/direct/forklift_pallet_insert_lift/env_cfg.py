@@ -255,6 +255,15 @@ class ForkliftPalletInsertLiftEnvCfg(DirectRLEnvCfg):
     preinsert_delta_clip_y_m: float = 0.02
     preinsert_delta_clip_yaw_deg: float = 1.5
     preinsert_delta_clip_dist_m: float = 0.05
+    # Stage A structural repair: forward progress is only rewarded when the
+    # fork is already geometrically aligned enough. This is default-off so old
+    # checkpoints and baselines keep their original reward surface.
+    preinsert_forward_align_gate_enable: bool = False
+    preinsert_forward_gate_floor: float = 0.0
+    preinsert_forward_center_sigma_m: float = 0.10
+    preinsert_forward_yaw_sigma_deg: float = 6.0
+    preinsert_forward_tip_sigma_m: float = 0.10
+    preinsert_forward_misaligned_penalty_weight: float = 0.0
 
     # ---- O2/O3: post-insert lateral/tip/yaw dense shaping ----
     postinsert_align_enable: bool = False
