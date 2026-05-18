@@ -2374,6 +2374,21 @@ class ForkliftPalletInsertLiftEnv(DirectRLEnv):
             r_preinsert_align = torch.zeros_like(insert_norm)
             r_preinsert_retreat = torch.zeros_like(insert_norm)
 
+        if self.cfg.preinsert_push_penalty_enable:
+            preinsert_push_amount = torch.clamp(
+                (pallet_disp_xy - self.cfg.preinsert_push_penalty_start_m)
+                / max(self.cfg.preinsert_push_penalty_scale_m, 1e-6),
+                min=0.0,
+                max=1.0,
+            )
+            r_preinsert_push = -(
+                self.cfg.preinsert_push_penalty_weight
+                * preinsert_active
+                * preinsert_push_amount
+            )
+        else:
+            r_preinsert_push = torch.zeros_like(insert_norm)
+
         # O2/O3: post-insert lateral/tip/yaw dense shaping
         if self.cfg.postinsert_align_enable:
             postinsert_active = (insert_depth >= self._insert_thresh).float()
@@ -2522,6 +2537,7 @@ class ForkliftPalletInsertLiftEnv(DirectRLEnv):
             r_dirty_insert +
             r_dirty_success +
             r_preinsert_retreat +
+            r_preinsert_push +
             r_premature_lift +
             r_post_lift_stability
         )
@@ -2637,6 +2653,7 @@ class ForkliftPalletInsertLiftEnv(DirectRLEnv):
         self.extras["log"]["paper_reward/r_clean_insert_bonus"] = r_clean_insert_bonus.mean()
         self.extras["log"]["paper_reward/r_preinsert_align"] = r_preinsert_align.mean()
         self.extras["log"]["paper_reward/r_preinsert_retreat"] = r_preinsert_retreat.mean()
+        self.extras["log"]["paper_reward/r_preinsert_push"] = r_preinsert_push.mean()
         self.extras["log"]["paper_reward/r_postinsert_align"] = r_postinsert_align.mean()
         self.extras["log"]["paper_reward/rg"] = rg.mean()
         self.extras["log"]["paper_reward/r_success"] = r_success.mean()

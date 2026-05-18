@@ -202,6 +202,10 @@ class ForkliftPalletInsertLiftEnvCfg(DirectRLEnvCfg):
     # termination require the same push-free condition used by eval diagnostics.
     push_free_training_success_enable: bool = False
     push_free_dirty_success_penalty_weight: float = 10.0
+    preinsert_push_penalty_enable: bool = False
+    preinsert_push_penalty_weight: float = 4.0
+    preinsert_push_penalty_start_m: float = 0.03
+    preinsert_push_penalty_scale_m: float = 0.20
 
     # ---- Steering curriculum v2: pre-insert correction shaping ----
     # 在真正插入前，继续奖励“横向 / 偏航 / 前向距离变好”，
