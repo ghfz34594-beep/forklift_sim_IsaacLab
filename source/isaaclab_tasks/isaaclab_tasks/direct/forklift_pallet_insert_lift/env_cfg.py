@@ -264,6 +264,19 @@ class ForkliftPalletInsertLiftEnvCfg(DirectRLEnvCfg):
     preinsert_forward_yaw_sigma_deg: float = 6.0
     preinsert_forward_tip_sigma_m: float = 0.10
     preinsert_forward_misaligned_penalty_weight: float = 0.0
+    # Stage A structural repair: explicitly reward increasing insertion depth
+    # only when geometry is clean enough. Default-off to preserve baselines.
+    clean_insert_progress_reward_enable: bool = False
+    clean_insert_progress_reward_weight: float = 0.0
+    clean_insert_progress_reward_scale_frac: float = 0.05
+    clean_insert_progress_reward_start_frac: float = 0.0
+    clean_insert_progress_reward_end_frac: float = 0.45
+    clean_insert_progress_reward_gate_floor: float = 0.0
+    clean_insert_progress_reward_use_push_gate: bool = True
+    clean_insert_progress_center_sigma_m: float = 0.10
+    clean_insert_progress_yaw_sigma_deg: float = 6.0
+    clean_insert_progress_tip_sigma_m: float = 0.10
+    clean_insert_progress_push_sigma_m: float = 0.08
 
     # ---- O2/O3: post-insert lateral/tip/yaw dense shaping ----
     postinsert_align_enable: bool = False
